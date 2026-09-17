@@ -78,12 +78,15 @@ def check_notebook_source_size():
         return "FAIL", (f"{size:,} bytes >= Kaggle's {LIMIT:,}-byte kernel "
                         f"source limit -- the notebook CANNOT be saved on "
                         f"Kaggle (\"kernel source must be less than 1 "
-                        f"megabytes\"); shrink an EMBED_GROUPS entry in "
-                        f"scripts/build_kaggle_notebook.py")
+                        f"megabytes\"); Step 0 clones code from git rather "
+                        f"than embedding it, so this means something got "
+                        f"written directly into a cell's source in "
+                        f"scripts/build_kaggle_notebook.py's CELLS list -- "
+                        f"trim it")
     if size >= MARGIN:
         return "FAIL", (f"{size:,} bytes -- within {LIMIT - size:,} bytes of "
-                        f"Kaggle's {LIMIT:,}-byte limit; trim embedded "
-                        f"content before it crosses over")
+                        f"Kaggle's {LIMIT:,}-byte limit; trim cell content "
+                        f"before it crosses over")
     return f"{size:,} bytes (Kaggle's limit is {LIMIT:,})"
 
 
