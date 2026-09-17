@@ -1,0 +1,16 @@
+# Experiment E01 -- 75% linear resolution. Box area falls to 56.25% of original.
+#
+# This file intentionally contains almost nothing. Every hyperparameter comes
+# from master.yaml; the ONLY thing an experiment is permitted to change is
+# which resolution of the dataset it reads. src/training.py enforces that --
+# adding, say, `lr0` here raises rather than silently breaking the control.
+
+inherits: master.yaml
+experiment: E01
+
+# For reference only; read from master.yaml at runtime.
+_resolution:
+  label: r75
+  scale: 0.75
+  run_id: 01_r75
+  area_scale: 0.5625

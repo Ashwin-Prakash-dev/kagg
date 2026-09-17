@@ -1,0 +1,240 @@
+# =============================================================================
+# MASTER REPRODUCIBILITY CONFIG  (Part V)
+#
+# Single source of truth for the FAIR1M resolution study. Every experiment
+# inherits this file and overrides ONLY the keys listed under
+# `experiments.<id>.overrides`, which in the primary sweep is nothing but the
+# dataset path and the run name.
+#
+# If a value is not in this file, it is not controlled. Do not pass training
+# hyperparameters on the command line.
+# =============================================================================
+
+study:
+  name: fair1m_ship_resolution
+  question: >
+    How does reducing the spatial resolution of satellite imagery affect ship
+    detection performance, and does the effect depend on object size?
+  independent_variable: image_spatial_resolution
+  primary_task: single_class_ship_detection
+  created_with:
+    ultralytics: "8.4.61"
+    torch: "2.9.1"
+
+# -----------------------------------------------------------------------------
+# Dataset
+# -----------------------------------------------------------------------------
+dataset:
+  source: FAIR1M v1.0 (Gaofen Challenge export)
+  derived_from: data/ship_only/ship_annotations.parquet
+  classes:
+    0: ship
+  nc: 1
+  # All 9 FAIR1M ship categories collapse to class 0.
+  ship_categories:
+    - Dry Cargo Ship
+    - Motorboat
+    - Fishing Boat
+    - other-ship
+    - Engineering Ship
+    - Liquid Cargo Ship
+    - Passenger Ship
+    - Tugboat
+    - Warship
+  split:
+    method: official_FAIR1M_train_val
+    # Identical image and annotation identities in every condition. Enforced by
+    # construction: all four datasets are generated from one image manifest.
+    manifest: data/ship_only/image_manifest.csv
+    train_images: 4930
+    val_images: 2776
+    train_ships: 31462
+    val_ships: 27520
+  background_images:
+    policy: sampled_fraction_of_ship_free_images
+    fraction: 0.10
+    seed: 42
+    retained: 771
+    available: 17840
+
+# -----------------------------------------------------------------------------
+# Object-size bins  (Part H)  -- see analysis/object_size_definition.md
+# -----------------------------------------------------------------------------
+object_size_bins:
+  method: coco_absolute_pixel_area
+  measured_on: ORIGINAL_resolution_annotation
+  # Assigned once, per object, and never recomputed per resolution. Recomputing
+  # would slide the whole population into `small` at r25 and make each row of
+  # the resolution x size table describe a different set of ships.
+  fixed_across_resolutions: true
+  small_max_px2: 1024      # 32^2
+  medium_max_px2: 9216     # 96^2
+  counts: {small: 24998, medium: 27774, large: 6210}
+  secondary_tertile_thresholds_px2: [682.0, 2760.0]
+
+# -----------------------------------------------------------------------------
+# Resolution preprocessing  (Part I)
+# -----------------------------------------------------------------------------
+preprocessing:
+  resample: gaussian_prefilter_then_inter_area
+  prefilter_sigma: "(1/scale - 1) / 2"
+  box_transform: realized_scale   # out_dim / src_dim, NOT the nominal factor
+  preserve_aspect_ratio: true
+  force_common_shape: false
+  drop_small_boxes: false         # never; would change the GT set per condition
+  jpeg: {quality: 95, subsampling: 0}
+  applied_uniformly_to_all_conditions: true
+
+# -----------------------------------------------------------------------------
+# Model
+# -----------------------------------------------------------------------------
+model:
+  arch: yolov8m
+  weights: yolov8m.pt      # COCO-pretrained, identical starting point everywhere
+  pretrained: true
+
+# -----------------------------------------------------------------------------
+# Training -- passed verbatim to ultralytics YOLO.train()
+#
+# Anything left at an Ultralytics default is still written out explicitly, so
+# that a future version changing its defaults cannot silently change this study.
+# -----------------------------------------------------------------------------
+train:
+  epochs: 50
+  # Fixed, not `auto`. A batch size chosen per condition would vary the
+  # effective optimisation trajectory and confound the resolution variable.
+  batch: 8
+  # THE key control. Constant network input across E00-E03, so the only thing
+  # that changes is how much real detail the imagery carries.
+  #
+  # Must be >= the largest common source dimension (1000 px). At the Ultralytics
+  # default of 640 the dataloader would itself downsample E00 (1000 -> 640) and
+  # E01 (750 -> 640) to nearly the same effective detail, collapsing the
+  # contrast between the first two conditions before training starts.
+  imgsz: 1024
+  rect: false
+  single_cls: true
+  # Early stopping disabled: stopping at a different epoch per condition would
+  # be an uncontrolled difference in training length.
+  patience: 100000
+  optimizer: SGD           # pinned; `auto` can resolve differently per run
+  lr0: 0.01
+  lrf: 0.01
+  cos_lr: false
+  momentum: 0.937
+  weight_decay: 0.0005
+  warmup_epochs: 3.0
+  warmup_momentum: 0.8
+  warmup_bias_lr: 0.1
+  nbs: 64
+  box: 7.5
+  cls: 0.5
+  dfl: 1.5
+  amp: true
+  cache: false
+  workers: 8
+  val: true
+  plots: true
+  save_period: -1
+  fraction: 1.0
+  multi_scale: 0.0         # off: would reintroduce scale variation per batch
+
+# -----------------------------------------------------------------------------
+# Augmentation -- identical in every condition (Part D)
+# -----------------------------------------------------------------------------
+augmentation:
+  hsv_h: 0.015
+  hsv_s: 0.7
+  hsv_v: 0.4
+  # Rotation stays off. Overhead imagery has no canonical orientation, but
+  # rotating an axis-aligned box inflates it (a 45-degree rotated ship gets a
+  # much looser AABB), which would degrade label quality. Axis-aligned flips
+  # achieve the same orientation invariance with exact box geometry.
+  degrees: 0.0
+  translate: 0.1
+  scale: 0.5
+  shear: 0.0
+  perspective: 0.0
+  flipud: 0.5              # raised from the 0.0 default: valid for nadir imagery
+  fliplr: 0.5
+  bgr: 0.0
+  mosaic: 1.0
+  close_mosaic: 10
+  mixup: 0.0
+  cutmix: 0.0
+  copy_paste: 0.0
+  erasing: 0.4
+
+# -----------------------------------------------------------------------------
+# Evaluation
+# -----------------------------------------------------------------------------
+evaluation:
+  # 0.001 is the standard mAP sweep threshold; a higher value would truncate the
+  # precision-recall curve and inflate AP.
+  conf: 0.001
+  iou: 0.7                 # NMS IoU
+  # Raised from the Ultralytics default of 300. The densest FAIR1M val tile
+  # holds 581 ships, so 300 would silently cap recall on exactly the crowded
+  # harbour scenes this study cares most about.
+  max_det: 1000
+  # Reported separately, for the operating-point metrics (P / R / F1).
+  operating_point_conf: 0.25
+  metrics:
+    - mAP50
+    - mAP50-95
+    - precision
+    - recall
+    - f1
+    - AP_small
+    - AP_medium
+    - AP_large
+
+# -----------------------------------------------------------------------------
+# Reproducibility
+# -----------------------------------------------------------------------------
+reproducibility:
+  seed: 42
+  deterministic: true
+  # Part S: additional seeds only if GPU budget allows. If not run, the study
+  # must be reported as single-seed with no significance claims.
+  additional_seeds: [123, 456]
+
+# -----------------------------------------------------------------------------
+# Experiments -- the ONLY intended differences between conditions
+# -----------------------------------------------------------------------------
+experiments:
+  E00:
+    id: "00_baseline"
+    label: original
+    scale: 1.00
+    overrides: {data: datasets/original/data.yaml, name: "00_baseline"}
+  E01:
+    id: "01_r75"
+    label: r75
+    scale: 0.75
+    overrides: {data: datasets/r75/data.yaml, name: "01_r75"}
+  E02:
+    id: "02_r50"
+    label: r50
+    scale: 0.50
+    overrides: {data: datasets/r50/data.yaml, name: "02_r50"}
+  E03:
+    id: "03_r25"
+    label: r25
+    scale: 0.25
+    overrides: {data: datasets/r25/data.yaml, name: "03_r25"}
+
+# -----------------------------------------------------------------------------
+# Optional follow-on studies. Kept strictly separate from the primary sweep.
+# -----------------------------------------------------------------------------
+optional:
+  repeated_seeds:            # Part S
+    enabled: false
+    conditions: [E00, E02, E03]
+    seeds: [42, 123, 456]
+  fine_grained_ships:        # Part T
+    enabled: false
+    nc: 9
+    note: >
+      Separate experiment. Must never be merged into the primary single-class
+      results table.

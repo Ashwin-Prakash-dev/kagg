@@ -1,0 +1,16 @@
+# Experiment E00 -- Baseline. Full native FAIR1M resolution.
+#
+# This file intentionally contains almost nothing. Every hyperparameter comes
+# from master.yaml; the ONLY thing an experiment is permitted to change is
+# which resolution of the dataset it reads. src/training.py enforces that --
+# adding, say, `lr0` here raises rather than silently breaking the control.
+
+inherits: master.yaml
+experiment: E00
+
+# For reference only; read from master.yaml at runtime.
+_resolution:
+  label: original
+  scale: 1.0
+  run_id: 00_baseline
+  area_scale: 1

@@ -1,0 +1,52 @@
+{
+  "ship_categories": [
+    "Dry Cargo Ship",
+    "Motorboat",
+    "Fishing Boat",
+    "other-ship",
+    "Engineering Ship",
+    "Liquid Cargo Ship",
+    "Passenger Ship",
+    "Tugboat",
+    "Warship"
+  ],
+  "class_mapping": {
+    "class_id": 0,
+    "class_name": "ship"
+  },
+  "n_ship_annotations": 58982,
+  "n_ship_annotations_dropped_as_unusable": 0,
+  "n_images_total": 7706,
+  "n_images_with_ships": 6935,
+  "n_background_images_retained": 771,
+  "n_background_images_available": 17840,
+  "background_fraction_requested": 0.1,
+  "background_fraction_realized": 0.1001,
+  "seed": 42,
+  "by_split": {
+    "Train": {
+      "images": 4930,
+      "background_images": 522,
+      "ships": 31462
+    },
+    "Val": {
+      "images": 2776,
+      "background_images": 249,
+      "ships": 27520
+    }
+  },
+  "size_bins": {
+    "method": "COCO pixel-area thresholds on original-resolution boxes",
+    "small_max_px2": 1024,
+    "medium_max_px2": 9216,
+    "tertile_thresholds_px2": [
+      682.0,
+      2760.0
+    ],
+    "counts": {
+      "small": 24998,
+      "medium": 27774,
+      "large": 6210
+    }
+  }
+}
