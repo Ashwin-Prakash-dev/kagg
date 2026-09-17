@@ -202,6 +202,41 @@ def check_time_budget_wiring():
     return "ENV_KEYS allows 'time'; count_completed_epochs() reads results.csv correctly; target_epochs respects --epochs override"
 
 
+def check_find_previous_results_deep_nesting():
+    """Regression test for a real bug: find_previous_results() used to only
+    search 2 levels deep under /kaggle/input, and a real Kaggle session's
+    attached Notebook Output nested deeper than that -- restore silently
+    found nothing, and a "resumed" run silently restarted every condition
+    from epoch 1 instead of continuing. The attached ship dataset itself is
+    known to sit 4 levels down (/kaggle/input/datasets/<owner>/<slug>/...),
+    so this checks a comparably deep structure, not just one extra level.
+    """
+    from src.paths import find_previous_results, restore_previous_results
+
+    with tempfile.TemporaryDirectory() as tmp:
+        fake_input = Path(tmp) / "input"
+        # Mirrors the real observed depth: input/<a>/<b>/<c>/results/...
+        results_dir = fake_input / "notebook-output" / "some-owner" / "v3" / "results"
+        (results_dir / "00_baseline" / "train" / "00_baseline" / "weights").mkdir(parents=True)
+        (results_dir / "00_baseline" / "train" / "00_baseline" / "weights" / "last.pt").write_bytes(b"fake")
+        (results_dir / "00_baseline" / "metrics.json").write_text('{"fake": true}')
+        (results_dir / "experiment_status.json").write_text('{"00_baseline": {"status": "in progress"}}')
+
+        found = find_previous_results(search_root=fake_input)
+        assert found == results_dir, f"expected {results_dir}, got {found}"
+
+        fresh_results_root = Path(tmp) / "working" / "results"
+        restored_from = restore_previous_results(fresh_results_root, search_root=fake_input)
+        assert restored_from == results_dir
+        restored_ckpt = (fresh_results_root / "00_baseline" / "train" / "00_baseline"
+                        / "weights" / "last.pt")
+        assert restored_ckpt.exists(), \
+            f"checkpoint was not restored to {restored_ckpt} -- resume would restart at epoch 1"
+    return ("find_previous_results() locates a results bundle nested 4 levels "
+            "deep (matching the real observed /kaggle/input nesting) and "
+            "restore_previous_results() copies its checkpoint through")
+
+
 def check_experiment_override_control():
     from src.training import build_train_args, load_master
     cfg = load_master(PKG / "configs" / "master.yaml")
@@ -582,6 +617,7 @@ CHECKS: list[tuple[str, str, str, callable]] = [
     ("max_det=1000 pinned", "LOCAL", "config", check_max_det_1000),
     ("Time-budget wiring", "LOCAL", "config", check_time_budget_wiring),
     ("Experiment override control", "LOCAL", "config", check_experiment_override_control),
+    ("Previous-results restore at deep nesting", "LOCAL", "dataset", check_find_previous_results_deep_nesting),
     ("data.yaml path resolution", "LOCAL", "dataset", check_data_yaml_path_resolution),
     ("Sanity subset staging", "LOCAL", "dataset", check_sanity_subset_staging),
     ("Annotation layer reconstruction", "LOCAL", "dataset", check_annotation_layer_reconstruction),

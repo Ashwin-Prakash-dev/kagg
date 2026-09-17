@@ -107,21 +107,27 @@ def find_previous_results(search_root: str | Path | None = None) -> Path | None:
     """Find a previously-attached Kaggle Notebook Output of THIS study's
     results, if the user re-attached one after a session was interrupted.
 
-    Looks under /kaggle/input for a directory containing this study's marker
-    files/subdirectories, rather than assuming a fixed notebook-output slug.
+    Searches /kaggle/input UNBOUNDED depth for this study's marker files --
+    same as find_datasets_root()'s rglob("data.yaml"), and for the same
+    reason: an attached input's actual nesting is not guaranteed to be
+    shallow. (The attached ship dataset itself turned out to sit 4 levels
+    down, at /kaggle/input/datasets/<owner>/<slug>/..., not directly under
+    /kaggle/input/<slug>/ as first assumed.) An earlier version of this
+    function only checked 2 levels deep and silently found nothing on a
+    deeper-nested Notebook Output, which made every "resumed" session
+    silently restart every condition from epoch 1 instead.
     """
     root = Path(search_root) if search_root else KAGGLE_INPUT
     if not root.exists():
         return None
-    for candidate in sorted(root.glob("*")):
-        if not candidate.is_dir():
-            continue
-        for sub in [candidate, *candidate.glob("*")]:
-            if not sub.is_dir():
-                continue
-            if any((sub / m).exists() for m in RESULT_MARKER_FILES) or \
-               any((sub / d / "metrics.json").exists() for d in RESULT_MARKER_DIRS):
-                return sub
+    for marker_file in RESULT_MARKER_FILES:
+        for hit in root.rglob(marker_file):
+            if hit.is_file():
+                return hit.parent
+    for marker_dir in RESULT_MARKER_DIRS:
+        for hit in root.rglob(marker_dir):
+            if hit.is_dir() and (hit / "metrics.json").exists():
+                return hit.parent
     return None
 
 
